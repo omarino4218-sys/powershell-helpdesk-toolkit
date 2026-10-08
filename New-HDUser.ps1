@@ -28,11 +28,11 @@
     Path to the run log. Defaults to .\New-HDUser.log in the script folder.
 
 .EXAMPLE
-    .\New-HDUser.ps1 -CsvPath .\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!" -WhatIf
+    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!" -WhatIf
     Shows what WOULD be created without creating anything.
 
 .EXAMPLE
-    .\New-HDUser.ps1 -CsvPath .\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!"
+    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!"
     Creates the accounts for real.
 
 .NOTES
