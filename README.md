@@ -30,19 +30,19 @@ A set of PowerShell scripts that automate the repetitive tickets a tier-1 helpde
 
 ```powershell
 # Preview user creation without changing anything
-.\scripts\New-HDUser.ps1 -CsvPath .\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!" -WhatIf
+.\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!" -WhatIf
 
 # Password reset with generated password
-.\scripts\Reset-HDPassword.ps1 -Identity jdoe
+.\Reset-HDPassword.ps1 -Identity jdoe
 
 # Inventory this machine, append to a shared CSV
-.\scripts\Get-SystemInventory.ps1 -ExportCsv \\fileserver\it\inventory.csv
+.\Get-SystemInventory.ps1 -ExportCsv \\fileserver\it\inventory.csv
 
 # Disk cleanup (preview first)
-.\scripts\Clear-TempFiles.ps1 -WhatIf
+.\Clear-TempFiles.ps1 -WhatIf
 
 # "Can't reach the file server" workflow
-.\scripts\Test-NetworkConnectivity.ps1 -TargetHost "fileserver01" -IncludeRdp
+.\Test-NetworkConnectivity.ps1 -TargetHost "fileserver01" -IncludeRdp
 ```
 
 > **Note:** AD scripts require the RSAT ActiveDirectory module (`Add-WindowsFeature RSAT-AD-PowerShell`) and an account with rights to manage users in the target OU. Run cleanup/inventory scripts elevated for full results.
