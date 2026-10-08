@@ -87,8 +87,11 @@ catch {
 }
 
 # --- Layer 3: internet (ping external IP, bypasses DNS) -------------------------
+# A failed ping here is INCONCLUSIVE, not proof of "no internet" — ICMP is
+# commonly filtered by firewalls even when the path works. Trust the TCP
+# results below over this ping.
 $pingExt = Test-Connection -ComputerName "8.8.8.8" -Count 2 -Quiet -ErrorAction SilentlyContinue
-Add-Check "Internet" "Ping 8.8.8.8" $pingExt "$(if ($pingExt) { 'Internet path OK' } else { 'No internet — but check: if gateway passed, suspect ISP/modem' })"
+Add-Check "Internet" "Ping 8.8.8.8" $pingExt "$(if ($pingExt) { 'Internet path OK' } else { 'External ICMP test failed; connectivity is inconclusive — check TCP results' })"
 
 # --- Layer 4: TCP ports ----------------------------------------------------------
 if ($targetIp) {
@@ -99,13 +102,19 @@ if ($targetIp) {
     }
 }
 else {
-    Add-Check "TCP" "Port tests" $false "Skipped — DNS resolution failed"
+    # Not a failure — the checks were skipped for lack of a target IP.
+    $results.Add([PSCustomObject]@{
+        Layer  = "TCP"
+        Test   = "Port tests"
+        Result = "SKIPPED"
+        Detail = "Skipped — DNS resolution failed, no target IP to test"
+    })
 }
 
 # --- Report ----------------------------------------------------------------------
 $results | Format-Table -AutoSize | Out-String | Write-Host
 foreach ($r in $results) {
-    $color = if ($r.Result -eq "PASS") { "Green" } else { "Red" }
+    $color = if ($r.Result -eq "PASS") { "Green" } elseif ($r.Result -eq "SKIPPED") { "Gray" } else { "Red" }
     Write-Host ("[{0}] {1}: {2}" -f $r.Result, $r.Test, $r.Detail) -ForegroundColor $color
 }
 

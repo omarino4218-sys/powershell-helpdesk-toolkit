@@ -22,18 +22,26 @@
 
 .PARAMETER DefaultPassword
     Temporary password assigned to every new account. Users are forced to
-    change it at first logon.
+    change it at first logon. Prompt securely (Read-Host -AsSecureString) —
+    never hardcode it in a script or pass it in cleartext on the command line.
+    A single shared password is a lab-only shortcut; in production, generate a
+    unique temporary password per user.
 
 .PARAMETER LogPath
     Path to the run log. Defaults to .\New-HDUser.log in the script folder.
 
 .EXAMPLE
-    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!" -WhatIf
+    $tempPw = Read-Host "Temporary password for new accounts" -AsSecureString
+    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" `
+        -DefaultPassword ([System.Net.NetworkCredential]::new("", $tempPw).Password) -WhatIf
     Shows what WOULD be created without creating anything.
 
 .EXAMPLE
-    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" -DefaultPassword "Temp#2026!"
-    Creates the accounts for real.
+    $tempPw = Read-Host "Temporary password for new accounts" -AsSecureString
+    .\New-HDUser.ps1 -CsvPath .\examples\new-hires.csv -TargetOU "OU=Users,DC=lab,DC=local" `
+        -DefaultPassword ([System.Net.NetworkCredential]::new("", $tempPw).Password)
+    Creates the accounts for real. In production, prefer a unique temporary
+    password per user instead of one shared password.
 
 .NOTES
     Requires the ActiveDirectory PowerShell module and an account with rights
@@ -81,18 +89,31 @@ $skipped = 0
 
 # --- Main loop ---------------------------------------------------------------
 Import-Csv -Path $CsvPath | ForEach-Object {
-    $first = $_.FirstName.Trim()
-    $last  = $_.LastName.Trim()
-    $dept  = $_.Department.Trim()
-
-    if (-not $first -or -not $last) {
-        Write-Warning "Skipping row with missing name: $($_.FirstName) $($_.LastName)"
-        Write-HDLog "SKIP: incomplete row (dept=$dept)"
+    # Validate BEFORE trimming: required headers must exist and name fields
+    # must not be null/blank. Trimming first would turn $null into "" and
+    # hide the difference between a missing column and an empty value.
+    if ($null -eq $_.PSObject.Properties['FirstName'] -or
+        $null -eq $_.PSObject.Properties['LastName']) {
+        Write-Warning "Skipping row: CSV is missing required headers (FirstName, LastName)."
+        Write-HDLog "SKIP: missing headers in CSV row"
+        $skipped++
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($_.FirstName) -or
+        [string]::IsNullOrWhiteSpace($_.LastName)) {
+        Write-Warning "Skipping row with missing name."
+        Write-HDLog "SKIP: incomplete row (blank name)"
         $skipped++
         return
     }
 
-    # Username: first initial + last name, lowercase, no spaces (jdoe)
+    $first = $_.FirstName.Trim()
+    $last  = $_.LastName.Trim()
+    $dept  = if ($_.Department) { $_.Department.Trim() } else { '' }
+
+    # Username: first initial + last name, lowercase, no spaces (jdoe).
+    # Accepted username characters: a-z and 0-9 only — anything else is
+    # stripped so the SamAccountName is always valid for AD logon.
     $baseName = (($first[0] + $last) -replace '[^a-zA-Z0-9]', '').ToLower()
     $sam = $baseName
     $n = 1
@@ -126,11 +147,23 @@ Import-Csv -Path $CsvPath | ForEach-Object {
             Write-Host "Created: $display ($sam)" -ForegroundColor Green
             $created++
 
-            # Add to a department group if one exists (e.g. "IT", "HR")
+            # Add to a department group if one exists (e.g. "IT", "HR").
+            # Group assignment is reported separately from account creation —
+            # a failed group add must not be logged as a success.
             $group = Get-ADGroup -Filter "Name -eq '$dept'" -ErrorAction SilentlyContinue
             if ($group) {
-                Add-ADGroupMember -Identity $group -Members $sam -ErrorAction SilentlyContinue
-                Write-HDLog "GROUP: added $sam to $($group.Name)"
+                try {
+                    Add-ADGroupMember -Identity $group -Members $sam -ErrorAction Stop
+                    Write-HDLog "GROUP: added $sam to $($group.Name)"
+                    Write-Host "  + group: $($group.Name)" -ForegroundColor Green
+                }
+                catch {
+                    Write-Warning "Account $sam created, but group add failed: $($_.Exception.Message)"
+                    Write-HDLog "GROUP FAILED: $sam -> $($group.Name): $($_.Exception.Message)"
+                }
+            }
+            else {
+                Write-HDLog "GROUP: no group named '$dept' — account created without group membership"
             }
         }
         catch {

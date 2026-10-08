@@ -13,6 +13,11 @@
     Also clears C:\Windows\SoftwareDistribution\Download (staged update files).
     Windows Update re-downloads what it needs.
 
+.PARAMETER IncludeRecycleBin
+    Also empties the Recycle Bin. Off by default — emptying the bin is
+    destructive and its reclaimed space is reported separately, not as part of
+    the temp-folder total.
+
 .PARAMETER LogPath
     Path to the cleanup log. Defaults to .\Clear-TempFiles.log.
 
@@ -21,8 +26,8 @@
     Preview what would be deleted.
 
 .EXAMPLE
-    .\Clear-TempFiles.ps1 -IncludeWindowsUpdateCache
-    Full cleanup including staged Windows Update files.
+    .\Clear-TempFiles.ps1 -IncludeWindowsUpdateCache -IncludeRecycleBin
+    Full cleanup including staged Windows Update files and the Recycle Bin.
 
 .NOTES
     Run elevated for best results (some system temp files need admin rights).
@@ -31,6 +36,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [switch]$IncludeWindowsUpdateCache,
+
+    [switch]$IncludeRecycleBin,
 
     [string]$LogPath = (Join-Path $PSScriptRoot "Clear-TempFiles.log")
 )
@@ -90,18 +97,21 @@ foreach ($folder in $targets) {
     Write-HDLog $msg
 }
 
-# Empty the recycle bin too (user profile bins)
-if ($PSCmdlet.ShouldProcess("Recycle Bin", "Empty")) {
-    try {
-        Clear-RecycleBin -Force -ErrorAction Stop
-        Write-HDLog "Recycle Bin emptied"
-        Write-Host "Recycle Bin emptied."
-    }
-    catch {
-        Write-HDLog "Recycle Bin: skipped ($($_.Exception.Message))"
+# Recycle Bin is opt-in only: emptying it is destructive, and its reclaimed
+# space is NOT part of the temp-folder total reported below.
+if ($IncludeRecycleBin) {
+    if ($PSCmdlet.ShouldProcess("Recycle Bin", "Empty")) {
+        try {
+            Clear-RecycleBin -Force -ErrorAction Stop
+            Write-HDLog "Recycle Bin emptied (opt-in)"
+            Write-Host "Recycle Bin emptied."
+        }
+        catch {
+            Write-HDLog "Recycle Bin: skipped ($($_.Exception.Message))"
+        }
     }
 }
 
-Write-HDLog "Cleanup complete. Total freed: $totalFreedMB MB"
-Write-Host "`nTotal space freed: $totalFreedMB MB" -ForegroundColor Green
+Write-HDLog "Cleanup complete. Temp-folder space reclaimed: $totalFreedMB MB"
+Write-Host "`nTemp-folder space reclaimed: $totalFreedMB MB" -ForegroundColor Green
 Write-Host "Log: $LogPath" -ForegroundColor Cyan

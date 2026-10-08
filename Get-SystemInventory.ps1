@@ -16,7 +16,8 @@
 
 .EXAMPLE
     .\Get-SystemInventory.ps1
-    Prints the inventory table to the console.
+    Outputs the inventory object to the pipeline (pipe to Format-List for a
+    readable view).
 
 .EXAMPLE
     .\Get-SystemInventory.ps1 -ExportCsv .\inventory.csv
@@ -58,7 +59,17 @@ $inventory = [PSCustomObject]@{
     CollectedBy   = "$env:USERDOMAIN\$env:USERNAME"
 }
 
-$inventory | Format-List
+# Health flags always run, even without -ExportCsv — the tech needs these
+# on screen for a one-off check, not just in the exported report.
+foreach ($d in $disk) {
+    $pctFree = if ($d.Size -gt 0) { ($d.FreeSpace / $d.Size) * 100 } else { 100 }
+    if ($pctFree -lt 10) {
+        Write-Warning "LOW DISK: $($d.DeviceID) has only $([math]::Round($pctFree,1))% free — likely cause of slowness."
+    }
+}
+if (($mem.TotalPhysicalMemory / 1GB) -lt 8) {
+    Write-Warning "LOW RAM: $([math]::Round($mem.TotalPhysicalMemory / 1GB, 1)) GB installed."
+}
 
 if ($ExportCsv) {
     $exists = Test-Path $ExportCsv
@@ -71,15 +82,8 @@ if ($ExportCsv) {
     else {
         Write-Host "Appended to $ExportCsv" -ForegroundColor Green
     }
-
-    # Quick health flags for the tech reading the report
-    foreach ($d in $disk) {
-        $pctFree = if ($d.Size -gt 0) { ($d.FreeSpace / $d.Size) * 100 } else { 100 }
-        if ($pctFree -lt 10) {
-            Write-Warning "LOW DISK: $($d.DeviceID) has only $([math]::Round($pctFree,1))% free — likely cause of slowness."
-        }
-    }
-    if (($mem.TotalPhysicalMemory / 1GB) -lt 8) {
-        Write-Warning "LOW RAM: $([math]::Round($mem.TotalPhysicalMemory / 1GB, 1)) GB installed."
-    }
 }
+
+# Return the raw object — callers choose their own formatting
+# (e.g. .\Get-SystemInventory.ps1 | Format-List).
+$inventory

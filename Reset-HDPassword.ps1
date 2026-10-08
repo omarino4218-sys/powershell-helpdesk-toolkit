@@ -4,16 +4,18 @@
 
 .DESCRIPTION
     The classic tier-1 ticket: "I can't log in." This script handles the full
-    workflow in one shot — resets the password (or generates a compliant one),
-    unlocks a locked-out account, forces a password change at next logon, and
-    writes every action to a log file for the ticket record.
+    workflow in one shot — resets the password (or generates a random 14-char
+    one meeting default AD complexity), unlocks a locked-out account, forces
+    a password change at next logon, and writes every action to a log file
+    for the ticket record.
 
 .PARAMETER Identity
     SamAccountName, UPN, or distinguished name of the user.
 
 .PARAMETER NewPassword
     The new temporary password. If omitted, a random 14-character password
-    meeting default AD complexity is generated.
+    meeting default AD complexity is generated with a cryptographically
+    secure RNG. Always deliver it over a verified channel, never in a ticket.
 
 .PARAMETER LogPath
     Path to the audit log. Defaults to .\Reset-HDPassword.log.
@@ -23,8 +25,11 @@
     Generates a random password, resets, unlocks, forces change at logon.
 
 .EXAMPLE
-    .\Reset-HDPassword.ps1 -Identity jdoe -NewPassword "Temp#4821!" -WhatIf
-    Preview mode — shows what would happen.
+    $tempPw = Read-Host "Temporary password" -AsSecureString
+    .\Reset-HDPassword.ps1 -Identity jdoe `
+        -NewPassword ([System.Net.NetworkCredential]::new("", $tempPw).Password) -WhatIf
+    Preview mode — shows what would happen. Prompts securely instead of
+    putting a password in cleartext on the command line.
 
 .NOTES
     Requires the ActiveDirectory module and password-reset rights on the account.
@@ -54,21 +59,45 @@ function Write-HDLog {
 }
 
 function New-CompliantPassword {
-    # 14 chars: upper, lower, digit, symbol — satisfies default AD complexity
+    # 14 chars drawn from upper/lower/digit/symbol — satisfies the DEFAULT AD
+    # complexity policy (3 of 4 character classes). "Compliant" here means
+    # default-policy compliant only: your domain may enforce a longer minimum
+    # length, password history, or fine-grained policies, so verify against
+    # your actual password policy before relying on this.
+    # Uses a cryptographically secure RNG (System.Security.Cryptography.
+    # RandomNumberGenerator), not System.Random.
     $upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     $lower   = 'abcdefghijkmnopqrstuvwxyz'
     $digits  = '23456789'
     $symbols = '!@#$%^&*'
     $all = $upper + $lower + $digits + $symbols
-    $rng = [System.Random]::new()
-    $chars = @(
-        $upper[$rng.Next($upper.Length)],
-        $lower[$rng.Next($lower.Length)],
-        $digits[$rng.Next($digits.Length)],
-        $symbols[$rng.Next($symbols.Length)]
-    )
-    1..10 | ForEach-Object { $chars += $all[$rng.Next($all.Length)] }
-    -join ($chars | Sort-Object { $rng.Next() })
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $pick = {
+            param([string]$pool)
+            $b = New-Object byte[] 4
+            $rng.GetBytes($b)
+            $pool[[BitConverter]::ToUInt32($b, 0) % $pool.Length]
+        }
+        $chars = @(
+            (& $pick $upper),
+            (& $pick $lower),
+            (& $pick $digits),
+            (& $pick $symbols)
+        )
+        1..10 | ForEach-Object { $chars += (& $pick $all) }
+        # Fisher-Yates shuffle with the same secure RNG
+        for ($i = $chars.Count - 1; $i -gt 0; $i--) {
+            $b = New-Object byte[] 4
+            $rng.GetBytes($b)
+            $j = [BitConverter]::ToUInt32($b, 0) % ($i + 1)
+            $tmp = $chars[$i]; $chars[$i] = $chars[$j]; $chars[$j] = $tmp
+        }
+        -join $chars
+    }
+    finally {
+        $rng.Dispose()
+    }
 }
 
 try {

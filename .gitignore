@@ -1,0 +1,15 @@
+# Generated run logs
+*.log
+
+# Local outputs (CSVs, exports)
+/outputs/
+*.csv
+!examples/*.csv
+
+# Windows leftovers
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.vscode/
+*.swp
